@@ -74,7 +74,6 @@ export default function ProfilePage() {
 
           <div style={styles.statsRow}>
             <StatCard icon="♥" value={favorites.length} label="В избранном" />
-            <StatCard icon="🆔" value={`#${user?.user_id}`} label="ID пользователя" />
           </div>
 
           {saveMsg && (

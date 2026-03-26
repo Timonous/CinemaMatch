@@ -83,7 +83,7 @@ function GroupCard({ group, onOpen, onLeave }) {
         <div>
           <div style={s.groupName}>{group.name}</div>
           <div style={s.groupMeta}>
-            <span style={s.codeChip}>ID: {group.group_id}</span>
+            
           </div>
         </div>
       </div>
@@ -164,7 +164,7 @@ function DetailView({ group, loading, onBack, inviteToGroup, leaveGroup }) {
         <div>
           <h2 style={s.detailTitle}>{group.name}</h2>
           <div style={s.detailMeta}>
-            <span style={s.codeChip}>ID группы: {group.group_id}</span>
+            
           </div>
         </div>
       </div>
@@ -183,7 +183,6 @@ function DetailView({ group, loading, onBack, inviteToGroup, leaveGroup }) {
                     {m.name}
                     {m.user_id === user?.user_id && <span style={s.youMark}> (вы)</span>}
                   </div>
-                  <div style={s.memberSub}>ID: {m.user_id}</div>
                 </div>
               </div>
             ))}

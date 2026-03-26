@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import Header from "../components/Header";
 import { getPosterUrl } from "../utils/moviePosters";
@@ -6,6 +6,12 @@ import { getPosterUrl } from "../utils/moviePosters";
 export default function HomePage() {
   const { currentMovie, skipMovie, addToFavorites, swipeDir, movieIndex, movies, moviesLoading } = useApp();
   const [imgError, setImgError] = useState(false);
+
+  // Сбрасываем ошибку при смене фильма, иначе все постеры после первой
+  // неудавшейся загрузки будут показывать заглушку вместо постера
+  useEffect(() => {
+    setImgError(false);
+  }, [currentMovie?.id]);
 
   // Постер берём из TMDB по названию фильма, если нет — заглушка
   const posterUrl = currentMovie ? getPosterUrl(currentMovie.title) : null;
