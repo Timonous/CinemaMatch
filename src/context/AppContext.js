@@ -1,201 +1,287 @@
-import React, { createContext, useContext, useState } from "react";
-import { TEST_USERS, MOVIES } from "../data/movies";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import * as authApi      from "../api/auth";
+import * as usersApi     from "../api/users";
+import * as moviesApi    from "../api/movies";
+import * as favouritesApi from "../api/favourites";
+import * as groupsApi    from "../api/groups";
 
 const AppContext = createContext(null);
 
-// Генерация 6-значного кода группы
-const genCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
-
-// Предзаполненные тестовые группы (глобальный реестр — имитирует «сервер»)
-const GLOBAL_GROUPS_REGISTRY = {
-  "DEMO01": {
-    id: "DEMO01",
-    name: "Киноклуб «Пятница»",
-    code: "DEMO01",
-    createdBy: "admin",
-    members: [
-      { name: "admin", displayName: "Администратор", favorites: [1, 3, 7, 9] },
-      { name: "demo",  displayName: "Demo User",     favorites: [2, 4, 8, 11] },
-    ],
-    createdAt: "2026-03-10",
-  },
-  "SCIFI7": {
-    id: "SCIFI7",
-    name: "Любители Sci-Fi",
-    code: "SCIFI7",
-    createdBy: "user",
-    members: [
-      { name: "user", displayName: "Тестовый Пользователь", favorites: [1, 2, 7, 11] },
-    ],
-    createdAt: "2026-03-15",
-  },
-};
-
 export function AppProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [favorites, setFavorites] = useState([]);
-  const [page, setPage] = useState("auth");
+  // ── Auth & User ───────────────────────────────────────────────────────────
+  const [user, setUser]         = useState(null);        // { user_id, email, name, surname }
   const [authError, setAuthError] = useState("");
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+  const [page, setPage]         = useState("auth");      // auth|home|favorites|profile|groups
+
+  // ── Movies (подборка) ─────────────────────────────────────────────────────
+  const [movies, setMovies]     = useState([]);          // список из API
+  const [moviesTotal, setMoviesTotal] = useState(0);
+  const [moviesPage, setMoviesPage]   = useState(1);
+  const [moviesLoading, setMoviesLoading] = useState(false);
   const [movieIndex, setMovieIndex] = useState(0);
   const [swipeDir, setSwipeDir] = useState(null);
 
-  // groups: массив объектов групп, к которым принадлежит текущий пользователь
-  const [myGroups, setMyGroups] = useState([]);
-  // реестр всех групп (мок «сервера»)
-  const [groupsRegistry, setGroupsRegistry] = useState(GLOBAL_GROUPS_REGISTRY);
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  // ── Favourites ────────────────────────────────────────────────────────────
+  const [favorites, setFavorites] = useState([]);        // MovieShort[]
+  const [favLoading, setFavLoading] = useState(false);
 
-  const login = (name, password) => {
-    const found = TEST_USERS.find(
-      (u) => u.name === name && u.password === password
-    );
-    if (found) {
-      setUser(found);
-      setPage("home");
-      setAuthError("");
-      // Загружаем группы пользователя из реестра
-      const userGroups = Object.values(GLOBAL_GROUPS_REGISTRY).filter((g) =>
-        g.members.some((m) => m.name === found.name)
-      );
-      setMyGroups(userGroups);
-      return true;
+  // ── Groups ────────────────────────────────────────────────────────────────
+  const [myGroups, setMyGroups]   = useState([]);        // GroupShort[]
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const saveToken = (token) => localStorage.setItem("access_token", token);
+  const clearToken = () => localStorage.removeItem("access_token");
+
+  // ── Загрузить фильмы (следующая страница / первая) ────────────────────────
+  const loadMovies = useCallback(async (pageNum = 1) => {
+    setMoviesLoading(true);
+    try {
+      const data = await moviesApi.getMovies({ page: pageNum, limit: 20 });
+      setMoviesTotal(data.total);
+      setMoviesPage(pageNum);
+      if (pageNum === 1) {
+        setMovies(data.items);
+        setMovieIndex(0);
+      } else {
+        setMovies((prev) => [...prev, ...data.items]);
+      }
+    } catch (e) {
+      console.error("loadMovies:", e.message);
+    } finally {
+      setMoviesLoading(false);
     }
-    setAuthError("Неверное имя пользователя или пароль");
-    return false;
-  };
+  }, []);
 
-  const register = (name, password) => {
-    if (!name || !password) { setAuthError("Заполните все поля"); return false; }
-    const newUser = { name, password, displayName: name };
-    setUser(newUser);
-    setPage("home");
+  // ── Загрузить избранное ───────────────────────────────────────────────────
+  const loadFavourites = useCallback(async () => {
+    setFavLoading(true);
+    try {
+      const data = await favouritesApi.getFavourites({ limit: 100 });
+      setFavorites(data.items);
+    } catch (e) {
+      console.error("loadFavourites:", e.message);
+    } finally {
+      setFavLoading(false);
+    }
+  }, []);
+
+  // ── Загрузить группы ──────────────────────────────────────────────────────
+  const loadGroups = useCallback(async () => {
+    setGroupsLoading(true);
+    try {
+      const data = await groupsApi.getGroups();
+      setMyGroups(data);
+    } catch (e) {
+      console.error("loadGroups:", e.message);
+    } finally {
+      setGroupsLoading(false);
+    }
+  }, []);
+
+  // ── Восстановить сессию при перезагрузке ─────────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    usersApi.getMe()
+      .then((profile) => {
+        setUser(profile);
+        setPage("home");
+        loadMovies(1);
+        loadFavourites();
+        loadGroups();
+      })
+      .catch(() => clearToken());
+  }, []); // eslint-disable-line
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+  const login = async (email, password) => {
     setAuthError("");
-    setMyGroups([]);
-    return true;
+    try {
+      const data = await authApi.login({ email, password });
+      saveToken(data.access_token);
+      const profile = await usersApi.getMe();
+      setUser(profile);
+      setPage("home");
+      loadMovies(1);
+      loadFavourites();
+      loadGroups();
+      return true;
+    } catch (e) {
+      setAuthError(e.message || "Неверный email или пароль");
+      return false;
+    }
   };
 
+  // ── Register ──────────────────────────────────────────────────────────────
+  const register = async (surname, name, email, password) => {
+    setAuthError("");
+    try {
+      await authApi.register({ surname, name, email, password });
+      // После регистрации сразу логинимся
+      return await login(email, password);
+    } catch (e) {
+      setAuthError(e.message || "Ошибка регистрации");
+      return false;
+    }
+  };
+
+  // ── Logout ────────────────────────────────────────────────────────────────
   const logout = () => {
+    clearToken();
     setUser(null);
+    setMovies([]);
     setFavorites([]);
-    setMovieIndex(0);
     setMyGroups([]);
-    setSelectedGroupId(null);
+    setMovieIndex(0);
     setPage("auth");
   };
 
-  // Создать группу
-  const createGroup = (groupName) => {
-    if (!groupName.trim()) return { ok: false, error: "Введите название группы" };
-    const code = genCode();
-    const newGroup = {
-      id: code,
-      name: groupName.trim(),
-      code,
-      createdBy: user.name,
-      members: [
-        {
-          name: user.name,
-          displayName: user.displayName || user.name,
-          favorites: favorites.map((m) => m.id),
-        },
-      ],
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    setGroupsRegistry((prev) => ({ ...prev, [code]: newGroup }));
-    setMyGroups((prev) => [...prev, newGroup]);
-    return { ok: true, group: newGroup };
-  };
+  // ── Карточки фильмов ──────────────────────────────────────────────────────
+  const currentMovie = movies[movieIndex] || null;
 
-  // Присоединиться к группе по коду
-  const joinGroup = (code) => {
-    const upper = code.trim().toUpperCase();
-    const group = groupsRegistry[upper];
-    if (!group) return { ok: false, error: "Группа с таким кодом не найдена" };
-    if (myGroups.some((g) => g.id === upper))
-      return { ok: false, error: "Вы уже состоите в этой группе" };
-
-    const memberEntry = {
-      name: user.name,
-      displayName: user.displayName || user.name,
-      favorites: favorites.map((m) => m.id),
-    };
-    const updated = {
-      ...group,
-      members: [...group.members, memberEntry],
-    };
-    setGroupsRegistry((prev) => ({ ...prev, [upper]: updated }));
-    setMyGroups((prev) => [...prev, updated]);
-    return { ok: true, group: updated };
-  };
-
-  // Покинуть группу
-  const leaveGroup = (groupId) => {
-    setMyGroups((prev) => prev.filter((g) => g.id !== groupId));
-    setGroupsRegistry((prev) => {
-      const g = prev[groupId];
-      if (!g) return prev;
-      return {
-        ...prev,
-        [groupId]: {
-          ...g,
-          members: g.members.filter((m) => m.name !== user.name),
-        },
-      };
-    });
-    if (selectedGroupId === groupId) setSelectedGroupId(null);
-  };
-
-  // Получить фильмы группы — пересечение избранного всех участников
-  const getGroupMovies = (groupId) => {
-    const group = groupsRegistry[groupId] || myGroups.find((g) => g.id === groupId);
-    if (!group) return [];
-    if (group.members.length < 2) {
-      // Один участник — просто его избранное
-      const ids = group.members[0]?.favorites || [];
-      return MOVIES.filter((m) => ids.includes(m.id));
+  const advanceMovie = () => {
+    const nextIndex = movieIndex + 1;
+    // Если подходим к концу — подгружаем следующую страницу
+    if (nextIndex >= movies.length) {
+      const hasMore = movies.length < moviesTotal;
+      if (hasMore) {
+        loadMovies(moviesPage + 1);
+      } else {
+        // Начать сначала
+        setMovieIndex(0);
+        return;
+      }
     }
-    // Считаем, сколько участников добавили каждый фильм — сортируем по популярности
-    const counts = {};
-    group.members.forEach((m) => {
-      (m.favorites || []).forEach((id) => {
-        counts[id] = (counts[id] || 0) + 1;
-      });
-    });
-    return MOVIES.filter((m) => counts[m.id])
-      .sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0));
+    setMovieIndex(nextIndex < movies.length ? nextIndex : 0);
   };
-
-  const currentMovie = MOVIES[movieIndex % MOVIES.length];
 
   const skipMovie = () => {
     setSwipeDir("left");
-    setTimeout(() => { setMovieIndex((i) => (i + 1) % MOVIES.length); setSwipeDir(null); }, 350);
+    setTimeout(() => {
+      setSwipeDir(null);
+      advanceMovie();
+    }, 350);
   };
 
-  const addToFavorites = () => {
+  const addToFavorites = async () => {
+    if (!currentMovie) return;
     setSwipeDir("right");
-    setFavorites((prev) => {
-      if (!prev.find((m) => m.id === currentMovie.id)) return [...prev, currentMovie];
-      return prev;
-    });
-    setTimeout(() => { setMovieIndex((i) => (i + 1) % MOVIES.length); setSwipeDir(null); }, 350);
+    try {
+      await favouritesApi.addFavourite(currentMovie.id);
+      // Обновляем список избранного
+      setFavorites((prev) =>
+        prev.find((m) => m.id === currentMovie.id) ? prev : [...prev, currentMovie]
+      );
+    } catch (e) {
+      // 409 — уже в избранном, не показываем ошибку
+      if (!e.message?.includes("уже")) console.error(e.message);
+    }
+    setTimeout(() => {
+      setSwipeDir(null);
+      advanceMovie();
+    }, 350);
   };
 
-  const removeFromFavorites = (id) => {
-    setFavorites((prev) => prev.filter((m) => m.id !== id));
+  const removeFromFavorites = async (id) => {
+    try {
+      await favouritesApi.removeFavourite(id);
+      setFavorites((prev) => prev.filter((m) => m.id !== id));
+    } catch (e) {
+      console.error("removeFromFavorites:", e.message);
+    }
+  };
+
+  // ── Группы ────────────────────────────────────────────────────────────────
+  const createGroup = async (name) => {
+    if (!name.trim()) return { ok: false, error: "Введите название группы" };
+    try {
+      const group = await groupsApi.createGroup(name.trim());
+      setMyGroups((prev) => [...prev, group]);
+      return { ok: true, group };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  };
+
+  // Присоединиться по email (invite себя) — API принимает email или user_id
+  const joinGroupByEmail = async (email) => {
+    // Нельзя напрямую «вступить по коду» через этот API —
+    // только владелец группы может пригласить. Поэтому для демо
+    // используем invite через email текущего пользователя.
+    // В реальном сценарии: нужен эндпоинт join-by-code или QR-ссылка.
+    return { ok: false, error: "Для вступления попросите создателя группы добавить вас по email" };
+  };
+
+  // Пригласить пользователя по email в группу
+  const inviteToGroup = async (group_id, email) => {
+    try {
+      await groupsApi.inviteToGroup(group_id, { email });
+      // Обновим детали группы
+      const updated = await groupsApi.getGroup(group_id);
+      setMyGroups((prev) => prev.map((g) => g.group_id === group_id ? { ...g, ...updated } : g));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  };
+
+  const leaveGroup = async (group_id) => {
+    if (!user) return;
+    try {
+      await groupsApi.leaveGroup(group_id, user.user_id);
+      setMyGroups((prev) => prev.filter((g) => g.group_id !== group_id));
+    } catch (e) {
+      console.error("leaveGroup:", e.message);
+    }
+  };
+
+  const getGroupDetail = async (group_id) => {
+    try {
+      return await groupsApi.getGroup(group_id);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const getGroupRecommendations = async (group_id) => {
+    try {
+      const data = await groupsApi.getGroupRecommendations(group_id);
+      return { ok: true, data };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  };
+
+  // ── Профиль ───────────────────────────────────────────────────────────────
+  const updateProfile = async ({ name, surname, password }) => {
+    try {
+      const updated = await usersApi.updateMe({ name, surname, password });
+      setUser(updated);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
   };
 
   return (
     <AppContext.Provider
       value={{
-        user, page, setPage,
-        authError, setAuthError,
-        login, register, logout,
-        favorites, addToFavorites, removeFromFavorites,
-        currentMovie, skipMovie, swipeDir,
-        totalMovies: MOVIES.length, movieIndex,
-        myGroups, createGroup, joinGroup, leaveGroup, getGroupMovies,
-        selectedGroupId, setSelectedGroupId,
+        // auth
+        user, authError, setAuthError, login, register, logout, updateProfile,
+        // nav
+        page, setPage,
+        // movies
+        movies, currentMovie, moviesLoading, moviesTotal, movieIndex,
+        swipeDir, skipMovie, addToFavorites, loadMovies,
+        // favorites
+        favorites, favLoading, removeFromFavorites, loadFavourites,
+        // groups
+        myGroups, groupsLoading, createGroup, joinGroupByEmail,
+        inviteToGroup, leaveGroup, getGroupDetail, loadGroups,
+        getGroupRecommendations,
       }}
     >
       {children}
