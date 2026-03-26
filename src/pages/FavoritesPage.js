@@ -1,6 +1,7 @@
 import React from "react";
 import { useApp } from "../context/AppContext";
 import Header from "../components/Header";
+import { getPosterUrl } from "../utils/moviePosters";
 
 export default function FavoritesPage() {
   const { favorites, removeFromFavorites, setPage, favLoading } = useApp();
@@ -45,7 +46,7 @@ function MovieCard({ movie, onRemove }) {
   const [hovered, setHovered] = React.useState(false);
   const [removing, setRemoving] = React.useState(false);
 
-  const posterPath = getKnownPoster(movie.title);
+  const posterPath = getPosterUrl(movie.title);
 
   const handleRemove = async () => {
     setRemoving(true);
@@ -58,7 +59,7 @@ function MovieCard({ movie, onRemove }) {
       onMouseLeave={() => setHovered(false)}>
       <div style={styles.posterWrap}>
         {posterPath ? (
-          <img src={`https://image.tmdb.org/t/p/w500/${posterPath}`}
+          <img src={posterPath}
             alt={movie.title} style={styles.poster}
             onError={e => { e.target.style.display = "none"; }} />
         ) : (
@@ -82,21 +83,6 @@ function MovieCard({ movie, onRemove }) {
       </div>
     </div>
   );
-}
-
-function getKnownPoster(title) {
-  const map = {
-    "Интерстеллар": "gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
-    "Начало": "9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg",
-    "Побег из Шоушенка": "lyQBXzOQSuE59IsHyhrp0qIiPAz.jpg",
-    "Тёмный рыцарь": "qJ2tW6WMUDux911r6m7haRef0WH.jpg",
-    "Форрест Гамп": "arw2vcBveWOVZr6pxd9XTd1TdQa.jpg",
-    "Матрица": "f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg",
-    "Крёстный отец": "3bhkrj58Vtu7enYsLlegkAzin1x.jpg",
-    "Дюна": "d5NXSklpcvwE3HP2SmweEvgmR6O.jpg",
-    "Паразиты": "7IiTTgloJzvGI1TAYymCfbfl3vT.jpg",
-  };
-  return map[title] || null;
 }
 
 const styles = {
